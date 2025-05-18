@@ -5,8 +5,19 @@ import yaml
 import subprocess
 import os
 
-# Fonction pour exécuter des commandes shell avec affichage en live
-def run_command(cmd):
+services_urls = {
+    "superset": "http://localhost:8088",
+    "clickhouse": "http://localhost:8123",
+    "minio": "http://localhost:9000",
+    "grafana": "http://localhost:3000",
+    "prometheus": "http://localhost:9090",
+    "spark": "http://localhost:4040",
+    "trino": "http://localhost:8080",
+    "ignite": "http://localhost:8081",
+    "yarn": "http://localhost:8088",
+}
+
+def run_command_streamed(cmd):
     st.write(f"📦 Lancement de : `{ ' '.join(cmd) }`")
     output_placeholder = st.empty()
     full_output = ""
@@ -21,30 +32,51 @@ def run_command(cmd):
         process.wait()
     return process.returncode, full_output
 
-# Chargement des services disponibles
-services = load_services()
+def get_container_status(container_name):
+    try:
+        result = subprocess.run(
+            ["docker", "inspect", "-f", "{{.State.Status}}", container_name],
+            capture_output=True, text=True, check=True
+        )
+        return result.stdout.strip()
+    except subprocess.CalledProcessError:
+        return "absent"
 
-# Préparation du tableau avec les valeurs par défaut
-rows = []
-for svc, conf in services.items():
-    rows.append({
-        "Activer": False,
-        "Service": svc,
-        "Version": conf["default_version"],
-        "CPU": "0.5",
-        "RAM": "512m",
-        "Replicas": conf.get("replicas", 1)
-    })
-
-df = pd.DataFrame(rows)
+def load_df(services):
+    rows = []
+    for svc, conf in services.items():
+        status = get_container_status(svc)
+        url = services_urls.get(svc, "")
+        rows.append({
+            "Activer": False,
+            "Service": svc,
+            "Version": conf["default_version"],
+            "CPU": "0.5",
+            "RAM": "512m",
+            "Replicas": conf.get("replicas", 1),
+            "Status": status,
+            "URL": url,
+        })
+    return pd.DataFrame(rows)
 
 st.title("🧱 Lakehouse Stack Builder")
-st.markdown("Configurez votre stack analytique en sélectionnant les composants et leurs ressources.")
+st.markdown("Configurez votre stack analytique et voyez le status des services.")
 
-# Éditeur interactif
+services = load_services()
+
+# Gestion du compteur pour refresh manuel
+if "refresh_counter" not in st.session_state:
+    st.session_state["refresh_counter"] = 0
+
+# Recharge les données à chaque incrément du compteur (bouton refresh)
+df = load_df(services)
+
 edited = st.data_editor(df, use_container_width=True, num_rows="fixed")
 
-# Bouton de génération
+if st.button("🔄 Rafraîchir le statut des services"):
+    st.session_state["refresh_counter"] += 1
+    st.experimental_rerun = None  # supprime l’appel erroné si présent
+
 if st.button("🚀 Générer et lancer la stack"):
     selected = {}
     for _, row in edited.iterrows():
@@ -55,30 +87,50 @@ if st.button("🚀 Générer et lancer la stack"):
                 "mem": row["RAM"],
                 "replicas": int(row["Replicas"])
             }
-    
+
     if not selected:
         st.warning("⚠️ Aucun service sélectionné.")
     else:
-        # Nettoyage de la stack précédente
+        missing_dependencies = []
+        for svc in selected:
+            declared_deps = services[svc].get("depends_on", [])
+            for dep in declared_deps:
+                if dep not in selected:
+                    missing_dependencies.append((svc, dep))
+        if missing_dependencies:
+            st.error("❌ Dépendances manquantes :")
+            for svc, dep in missing_dependencies:
+                st.markdown(f"- `{svc}` dépend de `{dep}`, qui n'est pas activé.")
+            st.stop()
+
         if os.path.exists("docker-compose.generated.yaml"):
             st.info("🧹 Nettoyage de l'ancienne stack...")
-            run_command(["docker", "compose", "-f", "docker-compose.generated.yaml", "down", "--remove-orphans", "--volumes"])
+            run_command_streamed([
+                "docker", "compose", "-f", "docker-compose.generated.yaml",
+                "down", "--remove-orphans", "--volumes"
+            ])
 
-        # Génération du fichier Compose
         st.info("🛠️ Génération du fichier docker-compose...")
         compose_yaml = build_compose(selected, services)
         with open("docker-compose.generated.yaml", "w") as f:
             yaml.dump(compose_yaml, f)
         st.success("✅ Fichier docker-compose.generated.yaml généré.")
 
-        # Lancement de la stack
         st.markdown("---")
         st.subheader("🚀 Lancement de la stack")
-        code, output = run_command(["docker", "compose", "-f", "docker-compose.generated.yaml", "up", "-d"])
-        
+        code, output = run_command_streamed([
+            "docker", "compose", "-f", "docker-compose.generated.yaml", "up", "-d"
+        ])
+
         if code == 0:
             st.success("✅ Stack lancée avec succès.")
             st.balloons()
+
+            st.markdown("### 🔗 Accès aux services")
+            for svc in selected:
+                url = services_urls.get(svc)
+                if url:
+                    st.markdown(f"- [{svc}]({url})")
         else:
-            st.error("❌ Une erreur est survenue lors du lancement.")
+            st.error("❌ Erreur lors du lancement.")
             st.code(output, language="bash")
