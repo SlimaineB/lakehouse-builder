@@ -1,0 +1,91 @@
+spark:
+  image: bitnami/spark
+  default_version: 3.4.1
+  ports:
+    - "7077:7077"
+    - "8080:8080"
+  replicas: 3
+  dependencies: []
+  cluster: true
+
+iceberg:
+  image: tabulario/iceberg
+  default_version: latest
+  ports:
+    - "8181:8181"
+  replicas: 1
+  dependencies: [minio]
+  cluster: false
+
+minio:
+  image: minio/minio
+  default_version: latest
+  ports:
+    - "9000:9000"
+  replicas: 1
+  dependencies: []
+  cluster: false
+
+trino:
+  image: trinodb/trino
+  default_version: 399
+  ports:
+    - "8080:8080"
+  replicas: 2
+  dependencies: [iceberg, minio]
+  cluster: true
+
+clickhouse:
+  image: clickhouse/clickhouse-server
+  default_version: 22.3.15.52
+  ports:
+    - "8123:8123"
+    - "9000:9000"
+  replicas: 3
+  dependencies: []
+  cluster: true
+
+superset:
+  image: apache/superset
+  default_version: latest
+  ports:
+    - "8088:8088"
+  replicas: 1
+  dependencies: [trino, clickhouse]
+  cluster: false
+
+prometheus:
+  image: prom/prometheus
+  default_version: v2.46.0
+  ports:
+    - "9090:9090"
+  replicas: 1
+  dependencies: []
+  cluster: false
+
+grafana:
+  image: grafana/grafana
+  default_version: latest
+  ports:
+    - "3000:3000"
+  replicas: 1
+  dependencies: [prometheus]
+  cluster: false
+
+node-exporter:
+  image: prom/node-exporter
+  default_version: v1.6.1
+  ports:
+    - "9100:9100"
+  replicas: 1
+  dependencies: []
+  cluster: false
+
+cadvisor:
+  image: gcr.io/cadvisor/cadvisor
+  default_version: latest
+  ports:
+    - "8089:8080"
+  replicas: 1
+  dependencies: []
+  cluster: false

@@ -1,0 +1,57 @@
+# Python
+__pycache__/
+*.py[cod]
+*.pyo
+*.pyd
+*.so
+*.egg
+*.egg-info/
+dist/
+build/
+.eggs/
+pip-wheel-metadata/
+
+# Environnements
+.venv/
+env/
+venv/
+ENV/
+.ENV/
+env.bak/
+venv.bak/
+
+# Jupyter / IPython
+.ipynb_checkpoints
+.profile_default/
+ipython_config.py
+
+# VSCode / PyCharm
+.vscode/
+.idea/
+
+# Mac / Linux
+.DS_Store
+*.swp
+*.swo
+Thumbs.db
+
+# Docker
+docker-compose.generated.yaml
+
+# Logs
+*.log
+logs/
+
+# Streamlit
+.streamlit/
+
+# Monitoring Data
+monitoring/prometheus/data/
+monitoring/grafana/data/
+
+# Secrets
+.env
+.env.*
+
+# Archive output
+*.zip
